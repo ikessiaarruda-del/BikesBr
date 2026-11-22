@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<title>BikesBr — Cidade sobre duas rodas | v1.6</title>
+<title>BikesBr — Cidade sobre duas rodas | v1.9</title>
 <style>
 :root{--glass:rgba(8,18,27,.78);--line:rgba(255,255,255,.17);--gold:#ffd45a}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;min-height:100dvh;overflow:hidden;background:#8ec8df;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#fff;touch-action:none;overscroll-behavior:none}
@@ -62,7 +62,7 @@ button:active,.held{transform:scale(.96);background:#246078}
 <div id="hud">
  <div id="brand" class="panel">🚲 BikesBr</div>
  <div id="stats" class="panel"><span>🪙 <b id="money">0</b></span><span>🚴 <b id="bikeName">Urbana</b></span></div>
- <div id="mission" class="panel"><b>TRABALHO</b><br><span id="missionText">Vá até o ponto amarelo para começar uma entrega.</span></div>
+ <div id="mission" class="panel"><b>TRABALHO</b><br><span id="missionText">Abra Trabalhar, aceite uma entrega e siga o marcador amarelo.</span></div>
  <div id="actions"><button id="shopBtn">🛒 Loja</button><button id="wardrobeBtn">👕 Guarda-roupa</button><button id="workBtn">💼 Trabalhar</button></div>
  <div id="speed" class="panel"><div style="display:flex;align-items:baseline;gap:5px"><strong id="speedNum">0</strong><span>km/h</span></div><div id="speedTrack"><div id="speedFill"></div></div><div id="speedScale">0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;40&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;80</div></div>
  <div id="hint">Pedale e segure EMPINAR para levantar a frente</div>
@@ -82,9 +82,9 @@ button:active,.held{transform:scale(.96);background:#246078}
  <div class="modal" id="mainMenu">
   <div style="font-size:38px">🚲🏙️</div>
   <h1>BikesBr</h1>
-  <div class="muted">Sua cidade, sua bicicleta, seu caminho. Explore uma cidade brasileira em 3D, pedale, faça entregas, ganhe moedas e personalize sua bike. Versão leve para celulares de diferentes capacidades.</div>
+  <div class="muted">Sua cidade, sua bicicleta, seu caminho. Explore uma cidade brasileira em 3D, pedale, faça entregas, ganhe moedas e personalize sua bike. Versão otimizada para celulares, com cidade ampla e controles responsivos.</div>
   <div class="row"><button id="startBtn">▶ JOGAR</button><button id="menuShopBtn">🛒 BICICLETAS</button></div>
-  <div class="muted">Versão 1.6 • Botão de empinar reposicionado e sempre visível.</div>
+  <div class="muted">Versão 1.11 • Entregas mais longas e desafiadoras.</div>
  </div>
  <div class="modal hidden" id="shopMenu">
   <h1>🛒 Loja de bicicletas</h1><p class="muted">Escolha uma bicicleta. Você começa com a Urbana gratuita.</p>
@@ -101,7 +101,7 @@ button:active,.held{transform:scale(.96);background:#246078}
  </div>
  <div class="modal hidden" id="workMenu">
   <h1>💼 Central de entregas</h1>
-  <p class="muted">Faça uma entrega pedalando até o marcador amarelo. Ao chegar, você recebe moedas.</p>
+  <p class="muted">Aceite uma entrega e percorra uma distância maior até o marcador amarelo. O destino fica em um cruzamento livre. Ao chegar perto, você recebe 25 moedas.</p>
   <div class="row"><button id="acceptBtn">Aceitar entrega (+25 🪙)</button><button id="closeWorkBtn">Agora não</button></div>
  </div>
 </div>
@@ -109,13 +109,14 @@ button:active,.held{transform:scale(.96);background:#246078}
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script>
 (()=>{
-// BikesBr v1.3 — empinada corrigida: frente sobe, ângulo maior e retorno suave.
+// BikesBr v1.9 — otimização de desempenho, colisões locais e destinos válidos para entregas.
 const $=id=>document.getElementById(id);
 const overlay=$('overlay'), mainMenu=$('mainMenu'), shopMenu=$('shopMenu'), workMenu=$('workMenu');
 let scene,camera,renderer,clock,player,bikePivot,bikeHeading,bikeTilt,bikeGroup,riderGroup,frontWheel,rearWheel,marker,cameraLook;
-let speed=0,heading=0,money=Number(localStorage.getItem('bikesbr_money')||0),owned=JSON.parse(localStorage.getItem('bikesbr_owned')||'["Urbana"]'),bike=localStorage.getItem('bikesbr_bike')||'Urbana';
+function readOwned(){try{const v=JSON.parse(localStorage.getItem('bikesbr_owned')||'["Urbana"]');return Array.isArray(v)?v.filter(x=>typeof x==='string'):['Urbana'];}catch(e){return ['Urbana'];}}
+let speed=0,heading=0,money=Math.max(0,Number(localStorage.getItem('bikesbr_money'))||0),owned=readOwned(),bike=localStorage.getItem('bikesbr_bike')||'Urbana';
 let active=false,delivery=false,destination=null,steer=0,throttle=false,braking=false,wheelieHeld=false,wheelieAngle=0;
-let lastRender=0,lastHud=0;const cameraTarget=new THREE.Vector3(),lookTarget=new THREE.Vector3();let frameStep=34;
+let lastRender=0,lastHud=0,lastMissionHud=0;const cameraTarget=new THREE.Vector3(),lookTarget=new THREE.Vector3();let frameStep=34;
 let shirtMaterial=null,pantsMaterial=null;
 // Sons procedurais de bicicleta: não precisa baixar arquivos de áudio.
 let audioCtx=null, lastPedalSound=0;
@@ -162,6 +163,14 @@ function applyWorldTextures(){
  mats.grass.map=grassTex;mats.grass.color.set(0xffffff);mats.grass.roughness=1;mats.grass.needsUpdate=true;
 }
 const buildingColliders=[];
+const colliderGrid=new Map(), COLLIDER_CELL=27;
+function addBuildingCollider(c){
+ buildingColliders.push(c);
+ const minX=Math.floor(c.minX/COLLIDER_CELL),maxX=Math.floor(c.maxX/COLLIDER_CELL);
+ const minZ=Math.floor(c.minZ/COLLIDER_CELL),maxZ=Math.floor(c.maxZ/COLLIDER_CELL);
+ for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++){const key=ix+','+iz;let bucket=colliderGrid.get(key);if(!bucket){bucket=[];colliderGrid.set(key,bucket);}bucket.push(c);}
+}
+let cityGroup=null;
 const bikes=[
  {name:'Urbana',price:0,color:0x20b7a5,desc:'Bicicleta urbana de passeio',label:'Urbana'},
  {name:'Naja',price:180,color:0xe64a35,desc:'Mountain bike inspirada na Hupi Naja',label:'Naja'},
@@ -169,9 +178,9 @@ const bikes=[
  {name:'BMX',price:140,color:0xf0a52c,desc:'Compacta e ágil',label:'BMX'},
  {name:'Speed',price:220,color:0xe75d5d,desc:'Quadro leve para asfalto',label:'Speed'}
 ];
-const mats={road:new THREE.MeshStandardMaterial({color:0x30363a,roughness:.96}),side:new THREE.MeshStandardMaterial({color:0xb8b2a5,roughness:1}),grass:new THREE.MeshStandardMaterial({color:0x557b4e,roughness:1}),white:new THREE.MeshStandardMaterial({color:0xf0eee2}),dark:new THREE.MeshStandardMaterial({color:0x26313a}),glass:new THREE.MeshPhysicalMaterial({color:0x91c9df,roughness:.18,metalness:.12,clearcoat:.8,clearcoatRoughness:.12}),yellow:new THREE.MeshStandardMaterial({color:0xffd43b,emissive:0x6b4300})};
-function box(w,h,d,mat,x,y,z,parent=scene){let m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);parent.add(m);return m}
-function cylinder(r1,r2,h,mat,x,y,z,parent=scene,rotX=0){let m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,12),mat);m.position.set(x,y,z);m.rotation.x=rotX;parent.add(m);return m}
+const mats={road:new THREE.MeshStandardMaterial({color:0x30363a,roughness:.96}),side:new THREE.MeshStandardMaterial({color:0xb8b2a5,roughness:1}),grass:new THREE.MeshStandardMaterial({color:0x557b4e,roughness:1}),white:new THREE.MeshStandardMaterial({color:0xf0eee2}),dark:new THREE.MeshStandardMaterial({color:0x26313a}),glass:new THREE.MeshPhysicalMaterial({color:0x91c9df,roughness:.18,metalness:.12,clearcoat:.8,clearcoatRoughness:.12}),yellow:new THREE.MeshStandardMaterial({color:0xffdf35,emissive:0xffa500,emissiveIntensity:1.35,roughness:.28,metalness:.05})};
+function box(w,h,d,mat,x,y,z,parent=(cityGroup||scene)){let m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);parent.add(m);return m}
+function cylinder(r1,r2,h,mat,x,y,z,parent=(cityGroup||scene),rotX=0){let m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,12),mat);m.position.set(x,y,z);m.rotation.x=rotX;parent.add(m);return m}
 function makeBike(){
  if(bikePivot && bikePivot.parent) bikePivot.parent.remove(bikePivot);
  bikePivot=new THREE.Group();
@@ -254,63 +263,64 @@ function makeBike(){
 
 }
 function init(){
- scene=new THREE.Scene();scene.background=new THREE.Color(0x9bd4ed);scene.fog=new THREE.Fog(0xb7d9e5,125,315);
- camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,430);
- const cores=navigator.hardwareConcurrency||2;const mem=navigator.deviceMemory||2;const isLowPower=cores<=4||mem<=3;const enhancedGraphics=cores>=6&&mem>=4;const renderScale=isLowPower?.86:(cores<=6||mem<=4?1.0:1.15);frameStep=isLowPower?38:32;renderer=new THREE.WebGLRenderer({antialias:enhancedGraphics,powerPreference:'high-performance',stencil:false,depth:true,preserveDrawingBuffer:false});renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,renderScale));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;renderer.shadowMap.enabled=enhancedGraphics;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.info.autoReset=true;renderer.setClearColor(0x9bd4ed);
+ scene=new THREE.Scene();scene.background=new THREE.Color(0x9bd4ed);scene.fog=new THREE.Fog(0xb7d9e5,375,945);
+ camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,1300);
+ const cores=navigator.hardwareConcurrency||2;const mem=navigator.deviceMemory||2;const isLowPower=cores<=4||mem<=3;const renderScale=isLowPower?.78:1.0;frameStep=isLowPower?42:33;renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:'high-performance',stencil:false,depth:true,preserveDrawingBuffer:false});renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,renderScale));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;renderer.shadowMap.enabled=false;renderer.info.autoReset=true;renderer.setClearColor(0x9bd4ed);
  $('game').appendChild(renderer.domElement);applyWorldTextures();
+ cityGroup=new THREE.Group();cityGroup.name='Cidade ampliada 3x — otimizada';scene.add(cityGroup);
  scene.add(new THREE.HemisphereLight(0xe8f7ff,0x596747,2.15));
  const ambient=new THREE.AmbientLight(0xffffff,.14);scene.add(ambient);
  let fillLight=new THREE.DirectionalLight(0xd9edff,1.15);fillLight.position.set(18,16,22);scene.add(fillLight);
- let sun=new THREE.DirectionalLight(0xfff1d4,2.8);sun.position.set(-35,58,-28);sun.castShadow=renderer.shadowMap.enabled;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-125;sun.shadow.camera.right=125;sun.shadow.camera.top=125;sun.shadow.camera.bottom=-125;sun.shadow.camera.near=1;sun.shadow.camera.far=260;sun.shadow.bias=-0.00025;sun.target.position.set(0,0,0);scene.add(sun);scene.add(sun.target);
+ let sun=new THREE.DirectionalLight(0xfff1d4,2.8);sun.position.set(-35,58,-28);sun.castShadow=false;sun.target.position.set(0,0,0);scene.add(sun);scene.add(sun.target);
  // Céu em degradê com horizonte mais claro para dar profundidade à cidade.
- const skyCanvas=document.createElement('canvas');skyCanvas.width=2;skyCanvas.height=256;const skyCtx=skyCanvas.getContext('2d');const skyGrad=skyCtx.createLinearGradient(0,0,0,256);skyGrad.addColorStop(0,'#397eae');skyGrad.addColorStop(.48,'#83c3df');skyGrad.addColorStop(1,'#e4e5d2');skyCtx.fillStyle=skyGrad;skyCtx.fillRect(0,0,2,256);const skyTex=new THREE.CanvasTexture(skyCanvas);skyTex.colorSpace=THREE.SRGBColorSpace;const skyDome=new THREE.Mesh(new THREE.SphereGeometry(360,20,12),new THREE.MeshBasicMaterial({map:skyTex,side:THREE.BackSide,depthWrite:false}));scene.add(skyDome);
+ const skyCanvas=document.createElement('canvas');skyCanvas.width=2;skyCanvas.height=256;const skyCtx=skyCanvas.getContext('2d');const skyGrad=skyCtx.createLinearGradient(0,0,0,256);skyGrad.addColorStop(0,'#397eae');skyGrad.addColorStop(.48,'#83c3df');skyGrad.addColorStop(1,'#e4e5d2');skyCtx.fillStyle=skyGrad;skyCtx.fillRect(0,0,2,256);const skyTex=new THREE.CanvasTexture(skyCanvas);skyTex.colorSpace=THREE.SRGBColorSpace;const skyDome=new THREE.Mesh(new THREE.SphereGeometry(1100,20,12),new THREE.MeshBasicMaterial({map:skyTex,side:THREE.BackSide,depthWrite:false}));scene.add(skyDome);
  // Disco solar suave e nuvens distantes para dar profundidade ao horizonte.
  const sunDisc=new THREE.Mesh(new THREE.SphereGeometry(5,12,8),new THREE.MeshBasicMaterial({color:0xffefc2}));sunDisc.position.set(-65,48,-105);scene.add(sunDisc);
  const cloudMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,transparent:true,opacity:.78});
  for(let i=0;i<5;i++){const cloud=new THREE.Group();const cx=-135+Math.random()*270,cz=-170+Math.random()*340,cy=30+Math.random()*22;for(let j=0;j<3;j++){const puff=new THREE.Mesh(new THREE.SphereGeometry(2.2+Math.random()*1.8,6,4),cloudMat);puff.position.set(j*2.2,Math.random()*1.2,Math.random()*1.4);cloud.add(puff);}cloud.position.set(cx,cy,cz);scene.add(cloud);}
  // city blocks and streets
- const ground=box(240,.2,240,mats.grass,0,-.18,0);ground.receiveShadow=true;
- const mainRoadA=box(14,.12,240,mats.road,0,-.05,0);mainRoadA.receiveShadow=true;const mainRoadB=box(240,.12,14,mats.road,0,-.05,0);mainRoadB.receiveShadow=true;
- box(2,.13,240,mats.side,-8,-.035,0);box(2,.13,240,mats.side,8,-.035,0);box(240,.13,2,mats.side,0,-.035,-8);box(240,.13,2,mats.side,0,-.035,8);
+ const ground=box(720,.2,720,mats.grass,0,-.18,0);ground.receiveShadow=true;
+ const mainRoadA=box(14,.12,720,mats.road,0,-.05,0);mainRoadA.receiveShadow=true;const mainRoadB=box(720,.12,14,mats.road,0,-.05,0);mainRoadB.receiveShadow=true;
+ box(2,.13,720,mats.side,-8,-.035,0);box(2,.13,720,mats.side,8,-.035,0);box(720,.13,2,mats.side,0,-.035,-8);box(720,.13,2,mats.side,0,-.035,8);
  // lane dashes
- for(let z=-112;z<115;z+=15)box(.16,.025,4,new THREE.MeshStandardMaterial({color:0xf6e6a4}),0,.03,z);
- const roadLine=new THREE.MeshStandardMaterial({color:0xe9e4d2,roughness:.9});box(.10,.025,240,roadLine,-6.55,.035,0);box(.10,.025,240,roadLine,6.55,.035,0);
+ for(let z=-352;z<355;z+=15)box(.16,.025,4,new THREE.MeshStandardMaterial({color:0xf6e6a4}),0,.03,z);
+ const roadLine=new THREE.MeshStandardMaterial({color:0xe9e4d2,roughness:.9});box(.10,.025,720,roadLine,-6.55,.035,0);box(.10,.025,720,roadLine,6.55,.035,0);
  // Faixas de retenção antes das travessias.
  for(const z of [-11.2,11.2])box(12,.03,.18,roadLine,0,.04,z);
  // side streets
- for(let x=-81;x<=81;x+=27){box(8,.11,240,mats.road,x,-.04,0);box(240,.11,8,mats.road,0,-.04,x)}
- // buildings
+ for(let x=-324;x<=324;x+=27){box(8,.11,720,mats.road,x,-.04,0);box(720,.11,8,mats.road,0,-.04,x)}
+ // Prédios otimizados: geometrias e instâncias compartilhadas.
+ // A cidade mantém o tamanho 3x, mas usa poucos lotes de desenho.
  const colors=[0xe2b78d,0xd8dce0,0xd9a5a0,0xe5d7a8,0xaac4c8,0xc3b4d7,0xd4c0a8,0xb7c7b5];
- const windowMat=new THREE.MeshStandardMaterial({color:0x79aebe,roughness:.42,metalness:.08});
- const roofMat=new THREE.MeshStandardMaterial({color:0xb9b5aa,roughness:.95});
- const trimMat=new THREE.MeshStandardMaterial({color:0xf4ead8,roughness:.85});
- for(let x=-100;x<=100;x+=18)for(let z=-100;z<=100;z+=18){
+ const buildingGeo=new THREE.BoxGeometry(8.2,1,8.2);
+ const buildingMats=colors.map(color=>new THREE.MeshStandardMaterial({color,roughness:.9}));
+ const buildingBatches=buildingMats.map(mat=>new THREE.InstancedMesh(buildingGeo,mat,1024));
+ const buildingCounts=buildingBatches.map(()=>0);
+ const windowMat=new THREE.MeshStandardMaterial({color:0x79aebe,roughness:.5,metalness:.04});
+ const windowGeo=new THREE.BoxGeometry(1.25,1.15,.07);
+ const windowBatch=new THREE.InstancedMesh(windowGeo,windowMat,4200);
+ const dummy=new THREE.Object3D();let windowCount=0;
+ for(let x=-298;x<=298;x+=18)for(let z=-298;z<=298;z+=18){
   if(Math.abs(x)<13||Math.abs(z)<13||Math.abs(x%27)<5||Math.abs(z%27)<5)continue;
-  const h=6+Math.random()*12,w=8.2,d=8.2;
-  const facadeColor=colors[Math.floor(Math.random()*colors.length)];
-  const mat=new THREE.MeshStandardMaterial({color:facadeColor,roughness:.88});
-  const b=box(w,h,d,mat,x,h/2,z);b.castShadow=renderer.shadowMap.enabled;b.receiveShadow=true;
-  buildingColliders.push({minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2});
-  // Duas fileiras de janelas grandes: aparência de cidade sem centenas de objetos extras.
-  for(let yy=2.5;yy<h-1;yy+=4.2){
-   for(let xx of [-2.35,0,2.35]){
-    box(1.35,1.35,.055,windowMat,x+xx,yy,z-d/2-.045);
-    box(1.35,1.35,.055,windowMat,x+xx,yy,z+d/2+.045);
-   }
+  const h=6+Math.random()*12,mi=Math.floor(Math.random()*buildingBatches.length);
+  dummy.position.set(x,h/2,z);dummy.rotation.set(0,0,0);dummy.scale.set(1,h,1);dummy.updateMatrix();
+  buildingBatches[mi].setMatrixAt(buildingCounts[mi]++,dummy.matrix);
+  addBuildingCollider({minX:x-4.1,maxX:x+4.1,minZ:z-4.1,maxZ:z+4.1});
+  // Duas janelas em cada face frontal/traseira, em um único lote instanciado.
+  for(const side of [-1,1])for(const wx of [-1.85,1.85]){
+   dummy.position.set(x+wx,Math.min(h-1.4,2.5+Math.floor((h-3)/5)*2.2),z+side*4.16);
+   dummy.scale.set(1,1,1);dummy.updateMatrix();windowBatch.setMatrixAt(windowCount++,dummy.matrix);
   }
-  box(w+.18,.28,d+.18,mats.white,x,h+.12,z);
-  box(w*.76,.18,d*.76,roofMat,x,h+.34,z);
-  // Moldura frontal simples e entrada para manter a escala humana.
-  box(w+.12,.12,.12,trimMat,x,h*.58,z-d/2-.08);
-  box(1.0,2.0,.09,new THREE.MeshStandardMaterial({color:0x51463c,roughness:.8}),x-2.1,1,z-d/2-.09);
  }
+ for(let i=0;i<buildingBatches.length;i++){buildingBatches[i].count=buildingCounts[i];buildingBatches[i].instanceMatrix.needsUpdate=true;cityGroup.add(buildingBatches[i]);}
+ windowBatch.count=windowCount;windowBatch.instanceMatrix.needsUpdate=true;cityGroup.add(windowBatch);
  // Árvores low-poly: copa única e tronco, reduzindo bastante os objetos da cena.
  const trunkMat=new THREE.MeshStandardMaterial({color:0x765034,roughness:1});
  const leafMats=[0x286b3b,0x367b42,0x4c8949,0x5b914b].map(color=>new THREE.MeshStandardMaterial({color,roughness:1}));
- for(let i=-108;i<=108;i+=18)for(let side of [-1,1]){
+ for(let i=-324;i<=324;i+=18)for(let side of [-1,1]){
   const x=side*10,z=i;cylinder(.18,.24,2,trunkMat,x,1,z);
   const crown=new THREE.Mesh(new THREE.IcosahedronGeometry(1.38,0),leafMats[Math.floor(Math.random()*leafMats.length)]);
-  crown.position.set(x,2.85,z);crown.castShadow=renderer.shadowMap.enabled;scene.add(crown);
+  crown.position.set(x,2.85,z);crown.castShadow=renderer.shadowMap.enabled;cityGroup.add(crown);
  }
  // Detalhes urbanos: faixas de pedestres, postes e calçadas com acabamento.
  const stripeMat=new THREE.MeshStandardMaterial({color:0xf4f0dc,roughness:.9});
@@ -318,24 +328,19 @@ function init(){
  for(const crossX of [-14,14]){for(let k=-4;k<=4;k++){box(.22,.035,.85,stripeMat,crossX,.055,k*1.15);}}
  const poleMat=new THREE.MeshStandardMaterial({color:0x34424a,metalness:.55,roughness:.4});
  const lampMat=new THREE.MeshStandardMaterial({color:0xffedb0,emissive:0xffc85c,emissiveIntensity:.65});
- for(let z=-108;z<=108;z+=36){for(const side of [-1,1]){const x=side*9.2;cylinder(.075,.095,4.6,poleMat,x,2.3,z);beamLamp(x,4.5,z,side);}}
- function beamLamp(x,y,z,side){const arm=box(.08,.08,1.05,poleMat,x-side*.48,y,z);arm.rotation.y=0;const shade=new THREE.Mesh(new THREE.SphereGeometry(.22,10,8),lampMat);shade.position.set(x-side*.92,y-.12,z);scene.add(shade);}
+ for(let z=-324;z<=324;z+=36){for(const side of [-1,1]){const x=side*9.2;cylinder(.075,.095,4.6,poleMat,x,2.3,z);beamLamp(x,4.5,z,side);}}
+ function beamLamp(x,y,z,side){const arm=box(.08,.08,1.05,poleMat,x-side*.48,y,z);arm.rotation.y=0;const shade=new THREE.Mesh(new THREE.SphereGeometry(.22,10,8),lampMat);shade.position.set(x-side*.92,y-.12,z);cityGroup.add(shade);}
  // Pequenas linhas de divisão nas calçadas para dar escala à rua.
- for(let z=-108;z<=108;z+=12){box(.035,.018,2,mats.white,8.98,.045,z);box(.035,.018,2,mats.white,-8.98,.045,z);}
- // Faixas de pista, linhas de bordo e sinalização horizontal nas ruas transversais.
- const laneMat=new THREE.MeshStandardMaterial({color:0xf4e8b5,roughness:.9});
- for(let road=-81;road<=81;road+=27){
-  if(road===0)continue;
-  for(let z=-82;z<84;z+=24){box(.13,.022,4,laneMat,road,.035,z);}
-  for(let x=-82;x<84;x+=24){box(4,.022,.13,laneMat,x,.035,road);}
- }
+ for(let z=-324;z<=324;z+=12){box(.035,.018,2,mats.white,8.98,.045,z);box(.035,.018,2,mats.white,-8.98,.045,z);}
+ // Ruas secundárias sem milhares de meshes de pintura; a avenida principal mantém as faixas.
  // Jardineiras, bancos e lixeiras deixam as calçadas menos vazias.
  const woodMat=new THREE.MeshStandardMaterial({color:0x80583b,roughness:.86});
  const planterMat=new THREE.MeshStandardMaterial({color:0x777e78,roughness:.9});
- for(let z=-60;z<=60;z+=60){for(let side of [-1,1]){
-  let x=side*9.7;box(1.25,.48,.95,planterMat,x,.25,z+5);
-  for(let j=0;j<3;j++){let shrub=new THREE.Mesh(new THREE.SphereGeometry(.28,10,8),new THREE.MeshStandardMaterial({color:0x397a42,roughness:1}));shrub.position.set(x+(j-1)*.32,.72,z+5);scene.add(shrub)}
-  box(1.65,.12,.52,woodMat,x,.62,z-4);for(let k=-1;k<=1;k++)box(.09,.52,.09,poleMat,x+k*.65,.35,z-4);
+ const shrubGeo=new THREE.SphereGeometry(.38,7,5),shrubMat=new THREE.MeshStandardMaterial({color:0x397a42,roughness:1});
+ for(let z=-300;z<=300;z+=60){for(let side of [-1,1]){
+  const x=side*9.7;box(1.25,.48,.95,planterMat,x,.25,z+5);
+  const shrub=new THREE.Mesh(shrubGeo,shrubMat);shrub.position.set(x,.72,z+5);cityGroup.add(shrub);
+  box(1.65,.12,.52,woodMat,x,.62,z-4);box(.09,.52,.09,poleMat,x-.65,.35,z-4);box(.09,.52,.09,poleMat,x+.65,.35,z-4);
  }}
  // Veículos estacionados como elementos de cenário, fora da faixa de circulação.
  function parkedCar(x,z,color,rot=0){
@@ -347,7 +352,7 @@ function init(){
   const wheelMat=new THREE.MeshStandardMaterial({color:0x171a1d,roughness:.95});
   for(let xx of [-.88,.88])for(let zz of [-1.05,1.05]){let wh=new THREE.Mesh(new THREE.CylinderGeometry(.34,.34,.18,16),wheelMat);wh.rotation.z=Math.PI/2;wh.position.set(xx,.38,zz);wh.castShadow=true;car.add(wh)}
   const lamp=new THREE.MeshStandardMaterial({color:0xfff0c8,emissive:0x8c7442,emissiveIntensity:.25});for(let xx of [-.55,.55]){let light=new THREE.Mesh(new THREE.BoxGeometry(.32,.18,.06),lamp);light.position.set(xx,.72,-1.64);car.add(light)}
-  car.traverse(o=>{if(o.isMesh){o.castShadow=renderer.shadowMap.enabled;o.receiveShadow=true;}});car.position.set(x,0,z);car.rotation.y=rot;scene.add(car);
+  car.traverse(o=>{if(o.isMesh){o.castShadow=renderer.shadowMap.enabled;o.receiveShadow=true;}});car.position.set(x,0,z);car.rotation.y=rot;cityGroup.add(car);
  }
  parkedCar(-10.8,-25,0xd34f3e,0);parkedCar(10.8,31,0x3c6f9c,Math.PI);parkedCar(-37,10,0xd9d9d1,Math.PI/2);parkedCar(37,-14,0x4d8a69,-Math.PI/2);
  // Placas de trânsito nas esquinas.
@@ -384,15 +389,18 @@ function animate(now=0){
   const moveZ=-Math.cos(heading)*speed*dt*.22;
   const bikeRadius=.82;
   function hitsBuilding(x,z){
-   return buildingColliders.some(c=>{
-    const nearX=THREE.MathUtils.clamp(x,c.minX,c.maxX);
-    const nearZ=THREE.MathUtils.clamp(z,c.minZ,c.maxZ);
-    const dx=x-nearX,dz=z-nearZ;
-    return dx*dx+dz*dz<bikeRadius*bikeRadius;
-   });
+   const ix=Math.floor(x/COLLIDER_CELL),iz=Math.floor(z/COLLIDER_CELL),r2=bikeRadius*bikeRadius;
+   for(let ox=-1;ox<=1;ox++)for(let oz=-1;oz<=1;oz++){
+    const bucket=colliderGrid.get((ix+ox)+','+(iz+oz));if(!bucket)continue;
+    for(let n=0;n<bucket.length;n++){
+     const c=bucket[n],nearX=THREE.MathUtils.clamp(x,c.minX,c.maxX),nearZ=THREE.MathUtils.clamp(z,c.minZ,c.maxZ);
+     const dx=x-nearX,dz=z-nearZ;if(dx*dx+dz*dz<r2)return true;
+    }
+   }
+   return false;
   }
-  const nextX=THREE.MathUtils.clamp(player.position.x+moveX,-112,112);
-  const nextZ=THREE.MathUtils.clamp(player.position.z+moveZ,-112,112);
+  const nextX=THREE.MathUtils.clamp(player.position.x+moveX,-336,336);
+  const nextZ=THREE.MathUtils.clamp(player.position.z+moveZ,-336,336);
   if(!hitsBuilding(nextX,player.position.z))player.position.x=nextX;
   else speed*=.72;
   if(!hitsBuilding(player.position.x,nextZ))player.position.z=nextZ;
@@ -405,7 +413,7 @@ function animate(now=0){
   bikeTilt.rotation.set(wheelieAngle,0,leanTarget);
   // Gira cada roda em torno do próprio eixo lateral (X no mundo).
   frontWheel.rotation.z-=speed*dt*.20;rearWheel.rotation.z-=speed*dt*.20;
-  if(delivery&&destination){let dist=Math.hypot(player.position.x-destination.x,player.position.z-destination.z);if(dist<3){delivery=false;money+=25;save();toast('Entrega concluída! +25 moedas 🪙');$('missionText').textContent='Entrega concluída! Aceite outro trabalho.';removeMarker()}}
+  if(delivery&&destination){if(marker){marker.rotation.y+=dt*.8;const pulse=1+Math.sin(now*.006)*.06;marker.scale.setScalar(pulse);}const dist=Math.hypot(player.position.x-destination.x,player.position.z-destination.z);if(dist<4.5){delivery=false;money+=25;save();toast('Entrega concluída! +25 moedas 🪙');$('missionText').textContent='Entrega concluída! Aceite outro trabalho.';removeMarker();destination=null;}else if(now-lastMissionHud>350){$('missionText').textContent='Siga o sinal amarelo brilhante! Distância: '+Math.round(dist)+' m. Recompensa: 25 moedas.';lastMissionHud=now;}}
  }
  // Câmera e ponto de mira usam o mesmo amortecimento para não parecerem
  // deslizar em direções diferentes da bicicleta.
@@ -417,10 +425,58 @@ function animate(now=0){
  if(now-lastHud>100){const kmh=Math.round(speed*1.35);$('speedNum').textContent=kmh;$('speedFill').style.width=Math.min(100,kmh/80*100)+'%';$('money').textContent=money;$('bikeName').textContent=(bikes.find(b=>b.name===bike)||bikes[0]).label;lastHud=now;}
  renderer.render(scene,camera);
 }
-function save(){localStorage.setItem('bikesbr_money',money);localStorage.setItem('bikesbr_owned',JSON.stringify(owned));localStorage.setItem('bikesbr_bike',bike);$('money').textContent=money}
+function save(){try{localStorage.setItem('bikesbr_money',String(money));localStorage.setItem('bikesbr_owned',JSON.stringify(owned));localStorage.setItem('bikesbr_bike',bike);}catch(e){toast('Não foi possível salvar. Verifique o espaço do aplicativo.');}$('money').textContent=money}
 function toast(t){$('toast').textContent=t;$('toast').style.opacity=1;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').style.opacity=0,1800)}
 function removeMarker(){if(marker){scene.remove(marker);marker=null}}
-function makeMarker(){removeMarker();let a=[[-24,-28],[32,25],[-35,36],[45,-42]][Math.floor(Math.random()*4)];destination={x:a[0],z:a[1]};marker=new THREE.Group();let base=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,.15,24),mats.yellow);base.position.y=.12;marker.add(base);let beam=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,3,10),mats.yellow);beam.position.y=1.7;marker.add(beam);let orb=new THREE.Mesh(new THREE.SphereGeometry(.55,16,12),mats.yellow);orb.position.y=3.4;marker.add(orb);marker.position.set(a[0],0,a[1]);scene.add(marker)}
+function makeMarker(){
+ removeMarker();
+ // Procura cruzamentos da malha viária à frente do jogador, em vez de
+ // escolher um ponto aleatório muito distante ou escondido no horizonte.
+ const forwardX=Math.sin(heading),forwardZ=-Math.cos(heading);
+ const candidates=[];
+ for(let gx=-12;gx<=12;gx++)for(let gz=-12;gz<=12;gz++){
+  const x=gx*27,z=gz*27;
+  if(Math.abs(x)>324||Math.abs(z)>324)continue;
+  const dx=x-player.position.x,dz=z-player.position.z;
+  const forward=dx*forwardX+dz*forwardZ;
+  const lateral=Math.abs(dx*forwardZ-dz*forwardX);
+  const distance=Math.hypot(dx,dz);
+  if(forward<160||forward>315||lateral>105)continue;
+  if(distance<160)continue;
+  candidates.push({x,z,score:distance+lateral*.35-forward*.08});
+ }
+ // Se o jogador estiver virado para a borda do mapa, usa o cruzamento
+ // livre mais próximo em qualquer direção como alternativa.
+ if(!candidates.length){
+  for(let gx=-12;gx<=12;gx++)for(let gz=-12;gz<=12;gz++){
+   const x=gx*27,z=gz*27,dx=x-player.position.x,dz=z-player.position.z;
+   const distance=Math.hypot(dx,dz);
+   if(distance>=160&&distance<=315)candidates.push({x,z,score:distance});
+  }
+ }
+ if(!candidates.length){toast('Não encontrei um cruzamento para a entrega. Tente novamente.');return false;}
+ candidates.sort((a,b)=>a.score-b.score);
+ // Escolhe entre os destinos mais distantes para deixar cada entrega mais longa.
+ candidates.sort((a,b)=>b.score-a.score);
+ const pool=candidates.slice(0,Math.min(5,candidates.length));
+ const chosen=pool[Math.floor(Math.random()*pool.length)];
+ destination={x:chosen.x,z:chosen.z};
+ marker=new THREE.Group();
+ const beaconMat=new THREE.MeshStandardMaterial({color:0xffe23b,emissive:0xffb000,emissiveIntensity:1.8,roughness:.22});
+ const base=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.6,.2,20),beaconMat);
+ base.position.y=.16;marker.add(base);
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(2.1,.12,8,32),beaconMat);
+ ring.rotation.x=Math.PI/2;ring.position.y=.32;marker.add(ring);
+ const beam=new THREE.Mesh(new THREE.CylinderGeometry(.3,.5,14,10),beaconMat);
+ beam.position.y=7.35;marker.add(beam);
+ const orb=new THREE.Mesh(new THREE.SphereGeometry(1.3,12,10),beaconMat);
+ orb.position.y=14.9;marker.add(orb);
+ marker.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.renderOrder=5;}});
+ marker.position.set(destination.x,0,destination.z);
+ scene.add(marker);
+ $('missionText').textContent='Entrega aceita! O sinal amarelo alto está mais distante. Prepare-se para uma entrega longa! Recompensa: 25 moedas.';
+ return true;
+}
 function openModal(which){throttle=false;braking=false;wheelieHeld=false;steer=0;overlay.classList.remove('hidden');mainMenu.classList.add('hidden');shopMenu.classList.add('hidden');workMenu.classList.add('hidden');$('wardrobeMenu').classList.add('hidden');$(which).classList.remove('hidden')}
 function closeModal(){overlay.classList.add('hidden');active=true}
 function renderShop(){let wrap=$('bikeChoices');wrap.innerHTML='';bikes.forEach(b=>{let ownedBike=owned.includes(b.name);let el=document.createElement('div');el.className='choice';let info=document.createElement('div');info.innerHTML='<b>'+b.name+' · '+b.label+'</b><br><span style="color:#b9cbd3;font-size:12px">'+b.desc+' • '+(b.price?b.price+' moedas':'Grátis')+'</span>';let btn=document.createElement('button');btn.textContent=bike===b.name?'Em uso':ownedBike?'Selecionar': 'Comprar';btn.onclick=()=>{if(ownedBike){bike=b.name;save();makeBike();renderShop();toast(b.name+' selecionada!')}else if(money>=b.price){money-=b.price;owned.push(b.name);bike=b.name;save();makeBike();renderShop();toast('Bicicleta comprada!')}else toast('Moedas insuficientes! Faça entregas.')};el.append(info,btn);wrap.appendChild(el)})}
@@ -437,7 +493,7 @@ $('defaultOutfitBtn').onclick=()=>{$('shirtColor').value='#256b9c';$('pantsColor
 $('closeWardrobeBtn').onclick=()=>closeModal();
 $('workBtn').onclick=()=>{active=false;openModal('workMenu')};
 $('closeWorkBtn').onclick=()=>closeModal();
-$('acceptBtn').onclick=()=>{if(!delivery){makeMarker();delivery=true;$('missionText').textContent='Siga o marcador amarelo! A recompensa é 25 moedas.';toast('Entrega aceita! Encontre o marcador.')}else toast('Você já tem uma entrega ativa.');closeModal()};
+$('acceptBtn').onclick=()=>{if(!delivery){if(makeMarker()){delivery=true;toast('Entrega aceita! Siga o marcador amarelo.');}}else toast('Você já tem uma entrega ativa. Siga o marcador amarelo.');closeModal()};
 function bindHold(id,fn){let el=$(id);el.addEventListener('pointerdown',e=>{unlockAudio();e.preventDefault();el.setPointerCapture?.(e.pointerId);fn(true);el.classList.add('held')});['pointerup','pointercancel','lostpointercapture'].forEach(ev=>el.addEventListener(ev,()=>{fn(false);el.classList.remove('held')}))}
 bindHold('pedal',v=>{if(v&&!throttle){playPedalStart();lastPedalSound=performance.now()}throttle=v;});bindHold('brake',v=>braking=v);bindHold('wheelie',v=>wheelieHeld=v);bindHold('left',v=>steer=v?-1:(steer===-1?0:steer));bindHold('right',v=>steer=v?1:(steer===1?0:steer));
 window.addEventListener('keydown',e=>{if(!active)return;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','a','s','d',' ','Spacebar'].includes(e.key))e.preventDefault();if(e.key==='ArrowUp'||e.key==='w'||e.key==='W')throttle=true;if(e.key==='ArrowDown'||e.key==='s'||e.key==='S')braking=true;if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A')steer=-1;if(e.key==='ArrowRight'||e.key==='d'||e.key==='D')steer=1;if(e.key===' '||e.key==='Spacebar')wheelieHeld=true});
