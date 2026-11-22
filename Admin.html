@@ -1,0 +1,348 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BikesBr - Administração</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;
+ padding:20px;
+ background:#07121b;
+ color:#f1f7f5;
+ font-family:Arial,sans-serif;
+}
+header{
+ text-align:center;
+ padding:25px 10px;
+}
+header h1{color:#c8f36a;font-size:30px}
+header p{color:#9bb0b9}
+.container{max-width:850px;margin:auto}
+.card{
+ background:#10222e;
+ border:1px solid #294653;
+ border-radius:16px;
+ padding:20px;
+ margin-bottom:18px;
+}
+h2{color:#c8f36a;margin-top:0}
+label{
+ display:block;
+ margin:15px 0 7px;
+ font-weight:bold;
+}
+input,textarea{
+ width:100%;
+ padding:13px;
+ border-radius:9px;
+ border:1px solid #36505d;
+ background:#071721;
+ color:white;
+ font-size:15px;
+}
+textarea{min-height:110px;resize:vertical}
+button{
+ padding:13px 17px;
+ border:0;
+ border-radius:9px;
+ font-weight:bold;
+ cursor:pointer;
+ margin:5px 3px 0 0;
+}
+.primary{background:#c8f36a;color:#10200a}
+.secondary{background:#25404d;color:white}
+button:disabled{opacity:.4}
+.status{
+ background:#071721;
+ border-radius:9px;
+ padding:13px;
+ margin-top:15px;
+ color:#b9d1ce;
+ font-size:13px;
+ line-height:1.5;
+}
+.item{
+ border-top:1px solid #294653;
+ padding:14px 0;
+}
+.item strong{color:#c8f36a}
+.item p{color:#9bb0b9;font-size:13px;white-space:pre-wrap}
+footer{
+ text-align:center;
+ color:#8299a2;
+ font-size:12px;
+ margin:25px 0;
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+<h1>🚲 BikesBr</h1>
+<p>Painel de Administração</p>
+</header>
+
+<div class="card">
+<h2>Preparar atualização</h2>
+
+<label for="version">Número da versão</label>
+<input id="version" placeholder="Exemplo: 1.1">
+
+<label for="notes">Novidades da atualização</label>
+<textarea id="notes" placeholder="Escreva o que mudou no jogo..."></textarea>
+
+<label for="game">Arquivo HTML do jogo</label>
+<input id="game" type="file" accept=".html,.htm">
+
+<div style="margin-top:15px">
+<button class="secondary" id="test" disabled>Testar prévia</button>
+<button class="primary" id="save" disabled>Guardar versão</button>
+</div>
+
+<div class="status" id="status">
+Escolha o arquivo HTML do BikesBr para começar.
+</div>
+</div>
+
+<div class="card">
+<h2>Como funciona</h2>
+<p>1. Escolha o arquivo HTML do jogo.</p>
+<p>2. Informe o número da versão.</p>
+<p>3. Escreva as novidades.</p>
+<p>4. Teste a prévia.</p>
+<p>5. Guarde a versão preparada.</p>
+<p style="color:#c8f36a">
+A publicação online será adicionada posteriormente.
+</p>
+</div>
+
+<div class="card">
+<h2>Histórico de versões</h2>
+<div id="history">
+<p style="color:#9bb0b9">Nenhuma versão preparada.</p>
+</div>
+</div>
+
+<footer>
+BikesBr Administração • Painel local
+</footer>
+
+</div>
+
+<script>
+const fileInput=document.getElementById("game");
+const versionInput=document.getElementById("version");
+const notesInput=document.getElementById("notes");
+const testButton=document.getElementById("test");
+const saveButton=document.getElementById("save");
+const statusBox=document.getElementById("status");
+
+let selectedFile=null;
+let selectedHTML="";
+
+function status(message){
+ statusBox.textContent=message;
+}
+
+fileInput.addEventListener("change",async()=>{
+ selectedFile=fileInput.files[0];
+
+ if(!selectedFile){
+  testButton.disabled=true;
+  saveButton.disabled=true;
+  return;
+ }
+
+ try{
+  selectedHTML=await selectedFile.text();
+
+  if(!selectedHTML.trim()) throw new Error();
+
+  testButton.disabled=false;
+  saveButton.disabled=false;
+  status("Arquivo carregado com sucesso!");
+ }catch(e){
+  selectedFile=null;
+  testButton.disabled=true;
+  saveButton.disabled=true;
+  status("Não foi possível ler o arquivo.");
+ }
+});
+
+testButton.addEventListener("click",()=>{
+ if(!selectedHTML)return;
+
+ const blob=new Blob(
+  [selectedHTML],
+  {type:"text/html"}
+ );
+
+ const url=URL.createObjectURL(blob);
+ const tab=window.open(url,"_blank");
+
+ if(!tab){
+  status("O navegador bloqueou a prévia.");
+  URL.revokeObjectURL(url);
+  return;
+ }
+
+ status("Prévia aberta. Confira o jogo antes de guardar.");
+ setTimeout(()=>URL.revokeObjectURL(url),60000);
+});
+
+const DB="BikesBrAdmin";
+const STORE="versions";
+
+function openDatabase(){
+ return new Promise((resolve,reject)=>{
+  const request=indexedDB.open(DB,1);
+
+  request.onupgradeneeded=()=>{
+   if(!request.result.objectStoreNames.contains(STORE)){
+    request.result.createObjectStore(
+     STORE,
+     {keyPath:"id",autoIncrement:true}
+    );
+   }
+  };
+
+  request.onsuccess=()=>resolve(request.result);
+  request.onerror=()=>reject(request.error);
+ });
+}
+
+async function saveVersion(data){
+ const db=await openDatabase();
+
+ return new Promise((resolve,reject)=>{
+  const transaction=db.transaction(STORE,"readwrite");
+  transaction.objectStore(STORE).add(data);
+
+  transaction.oncomplete=()=>{
+   db.close();
+   resolve();
+  };
+
+  transaction.onerror=()=>{
+   db.close();
+   reject(transaction.error);
+  };
+ });
+}
+
+async function getVersions(){
+ const db=await openDatabase();
+
+ return new Promise((resolve,reject)=>{
+  const request=db.transaction(STORE,"readonly")
+   .objectStore(STORE).getAll();
+
+  request.onsuccess=()=>{
+   db.close();
+   resolve(request.result);
+  };
+
+  request.onerror=()=>{
+   db.close();
+   reject(request.error);
+  };
+ });
+}
+
+saveButton.addEventListener("click",async()=>{
+ const version=versionInput.value.trim();
+ const notes=notesInput.value.trim();
+
+ if(!version){
+  status("Digite o número da versão.");
+  return;
+ }
+
+ if(!selectedHTML){
+  status("Escolha o arquivo HTML.");
+  return;
+ }
+
+ try{
+  await saveVersion({
+   version,
+   notes,
+   fileName:selectedFile.name,
+   html:selectedHTML,
+   date:new Date().toISOString()
+  });
+
+  status("Versão guardada neste aparelho! Ainda não foi publicada online.");
+  await showHistory();
+
+ }catch(e){
+  status("Erro ao guardar a versão. Verifique o espaço disponível.");
+ }
+});
+
+async function showHistory(){
+ const history=document.getElementById("history");
+
+ try{
+  const versions=await getVersions();
+
+  history.innerHTML="";
+
+  if(!versions.length){
+   history.textContent="Nenhuma versão preparada.";
+   return;
+  }
+
+  versions.sort((a,b)=>b.id-a.id);
+
+  versions.forEach(item=>{
+   const div=document.createElement("div");
+   div.className="item";
+
+   const title=document.createElement("strong");
+   title.textContent="Versão "+item.version;
+
+   const description=document.createElement("p");
+   description.textContent=item.notes||"Sem novidades descritas.";
+
+   const date=document.createElement("p");
+   date.textContent=new Date(item.date).toLocaleString("pt-BR");
+
+   const download=document.createElement("button");
+   download.className="secondary";
+   download.textContent="Baixar HTML";
+
+   download.onclick=()=>{
+    const blob=new Blob(
+     [item.html],
+     {type:"text/html"}
+    );
+
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+
+    a.href=url;
+    a.download="BikesBr_v"+item.version+".html";
+    a.click();
+
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+   };
+
+   div.append(title,description,date,download);
+   history.appendChild(div);
+  });
+
+ }catch(e){
+  history.textContent="Histórico indisponível neste navegador.";
+ }
+}
+
+showHistory();
+</script>
+</body>
+  </html>
+  
