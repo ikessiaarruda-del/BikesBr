@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<title>BikesBr — Cidade sobre duas rodas | v1.5</title>
+<title>BikesBr — Cidade sobre duas rodas | v1.6</title>
 <style>
 :root{--glass:rgba(8,18,27,.78);--line:rgba(255,255,255,.17);--gold:#ffd45a}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;min-height:100dvh;overflow:hidden;background:#8ec8df;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#fff;touch-action:none;overscroll-behavior:none}
@@ -32,8 +32,10 @@ button:active,.held{transform:scale(.96);background:#246078}
 #controls{position:absolute;z-index:20;bottom:calc(18px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:min(98vw,680px);display:flex;justify-content:space-between;align-items:end;gap:5px;pointer-events:auto}
 .cluster{display:flex;gap:6px;align-items:end;flex-shrink:0}
 #controls .control{flex:0 0 auto}
-#wheelie{display:flex!important;visibility:visible!important;opacity:1!important;background:#ffd45a!important;color:#17232b!important;border:2px solid #fff0b3!important;font-weight:900!important;box-shadow:0 0 0 3px #ffd45a33,0 4px 14px #0008!important;position:relative;z-index:25}
+#wheelie{position:absolute!important;right:14px;bottom:calc(100px + env(safe-area-inset-bottom));z-index:50!important;display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;width:62px;height:62px;padding:4px;background:#ffd45a!important;color:#17232b!important;border:2px solid #fff0b3!important;font-weight:900!important;box-shadow:0 0 0 4px #ffd45a44,0 5px 18px #000b!important;border-radius:18px}
 #wheelie .symbol{font-size:25px!important;color:#17232b!important}
+@media(max-width:480px){#wheelie{right:12px;bottom:calc(96px + env(safe-area-inset-bottom));width:58px;height:58px}}
+@media(max-width:350px){#wheelie{right:8px;bottom:calc(92px + env(safe-area-inset-bottom));width:54px;height:54px}}
 .cluster{display:flex;gap:9px;align-items:end}
 .control{width:62px;height:60px;border-radius:18px;background:#0b202dcc;border:1px solid #ffffff55;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;user-select:none}
 .control .symbol{font-size:23px;line-height:1}
@@ -51,8 +53,8 @@ button:active,.held{transform:scale(.96);background:#246078}
 .code-box button{width:100%;}
 .hidden{display:none!important}
 #toast{position:absolute;top:48%;left:50%;transform:translate(-50%,-50%);background:#071923ed;border:1px solid #fff4;padding:12px 18px;border-radius:12px;font-weight:700;opacity:0;transition:opacity .2s;pointer-events:none;text-align:center}
-@media(max-width:480px){#stats{font-size:11px}#brand{font-size:16px}.panel{padding:8px 9px}#mission{top:58px}.control{width:48px;height:56px;padding:5px 3px;font-size:10px}.control .symbol{font-size:20px}.control.wide{width:54px;height:62px}#controls{width:calc(100vw - 12px);gap:3px}.cluster{gap:4px}#wheelie{width:52px;height:56px}#hint{bottom:105px}}
-@media(max-width:350px){#controls{width:100vw;padding:0 4px}.control{width:43px;height:52px;font-size:9px}.control.wide{width:49px;height:58px}#wheelie{width:47px;height:52px}.cluster{gap:3px}}
+@media(max-width:480px){#stats{font-size:11px}#brand{font-size:16px}.panel{padding:8px 9px}#mission{top:58px}.control{width:48px;height:56px;padding:5px 3px;font-size:10px}.control .symbol{font-size:20px}.control.wide{width:54px;height:62px}#controls{width:calc(100vw - 12px);gap:3px}.cluster{gap:4px}#hint{bottom:105px}}
+@media(max-width:350px){#controls{width:100vw;padding:0 4px}.control{width:43px;height:52px;font-size:9px}.control.wide{width:49px;height:58px}.cluster{gap:3px}}
 </style>
 </head>
 <body>
@@ -72,9 +74,9 @@ button:active,.held{transform:scale(.96);background:#246078}
   <div class="cluster">
    <button class="control" id="brake"><span class="symbol">▼</span>Frear</button>
    <button class="control wide" id="pedal"><span class="symbol">🚴</span>Pedalar</button>
-   <button class="control" id="wheelie"><span class="symbol">⬆</span>Empinar</button>
   </div>
  </div>
+ <button class="control" id="wheelie"><span class="symbol">⬆</span>Empinar</button>
 </div>
 <div id="overlay">
  <div class="modal" id="mainMenu">
@@ -82,7 +84,7 @@ button:active,.held{transform:scale(.96);background:#246078}
   <h1>BikesBr</h1>
   <div class="muted">Sua cidade, sua bicicleta, seu caminho. Explore uma cidade brasileira em 3D, pedale, faça entregas, ganhe moedas e personalize sua bike. Versão leve para celulares de diferentes capacidades.</div>
   <div class="row"><button id="startBtn">▶ JOGAR</button><button id="menuShopBtn">🛒 BICICLETAS</button></div>
-  <div class="muted">Versão 1.3 • Empinada corrigida e mais alta + gráficos aprimorados.</div>
+  <div class="muted">Versão 1.6 • Botão de empinar reposicionado e sempre visível.</div>
  </div>
  <div class="modal hidden" id="shopMenu">
   <h1>🛒 Loja de bicicletas</h1><p class="muted">Escolha uma bicicleta. Você começa com a Urbana gratuita.</p>
